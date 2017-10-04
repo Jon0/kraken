@@ -270,8 +270,8 @@ impl<'a> Monitor<'a> {
                 previous_speed = smooth_speed;
                 println!("Setting fan: {}, pump {}", new_speed, new_speed);
                 for usb_device in self.sensor_usb.iter_mut() {
-                    usb_device.set_fan(new_speed);
-                    usb_device.set_pump(new_speed);
+                    usb_device.set_fan(smooth_speed);
+                    usb_device.set_pump(smooth_speed);
                 }
             }
         }
