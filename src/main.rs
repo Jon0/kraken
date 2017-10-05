@@ -160,6 +160,13 @@ impl<'a> UsbController<'a> {
         }
         let result = self.handle.write_interrupt(0x01, &mut buf, Duration::from_secs(1)).unwrap();
     }
+
+    fn set_color(&mut self, r: u8, g: u8, b: u8) {
+        let mode_a = 0x06;
+        let mode_b = 0x02;
+        let mut buf: [u8; 32] = [0x02, 0x4c, 0x00, mode_a, mode_b, g, r, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b];
+        let result = self.handle.write_interrupt(0x01, &mut buf, Duration::from_secs(1)).unwrap();
+    }
 }
 
 
@@ -265,13 +272,18 @@ impl<'a> Monitor<'a> {
                 }
 
                 // modify fan speed
-                let new_speed = (100.0 * highest_temp / 70.0) as u8;
-                let smooth_speed = (new_speed + previous_speed) / 2;
-                previous_speed = smooth_speed;
+                let target_speed = (100.0 * highest_temp / 70.0) as u8;
+
+                // smooth over large changes
+                let adjusted_speed: u32 = ((previous_speed as u32 * 7) + target_speed as u32) / 8;
+                let new_speed = adjusted_speed as u8;
+                previous_speed = new_speed;
+
                 println!("Setting fan: {}, pump {}", new_speed, new_speed);
                 for usb_device in self.sensor_usb.iter_mut() {
-                    usb_device.set_fan(smooth_speed);
-                    usb_device.set_pump(smooth_speed);
+                    usb_device.set_color(new_speed, 0, 0);
+                    usb_device.set_fan(new_speed);
+                    usb_device.set_pump(new_speed);
                 }
             }
         }
