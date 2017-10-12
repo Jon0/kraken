@@ -1,3 +1,4 @@
+extern crate rand;
 extern crate libusb;
 
 use std::str;
@@ -7,6 +8,7 @@ use std::io::SeekFrom;
 use std::fs::File;
 use std::time::Duration;
 use std::u8;
+use rand::Rng;
 
 type Temprature = f32;
 
@@ -108,6 +110,43 @@ impl Status {
 
 
 /*
+ * a single color
+ */
+#[derive(Debug, Copy, Clone)]
+struct RGB {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+
+impl RGB {
+    fn rand() -> RGB {
+        RGB {r: rand::random(), g: rand::random(), b: rand::random()}
+    }
+}
+
+
+fn color_msg(mode: u8, seq: u8, text: RGB, colors: &[RGB; 8]) -> [u8; 32] {
+    let mut result: [u8; 32] = [0; 32];
+    result[0] = 0x02;
+    result[1] = 0x4c;
+    result[2] = 0x00;
+    result[3] = mode;
+    result[4] = 0x02 | ((seq & 0x07) << 5);
+    result[5] = text.g;
+    result[6] = text.r;
+    result[7] = text.b;
+    for i in 0..8 {
+        result[i*3 + 8] = text.r;
+        result[i*3 + 9] = text.g;
+        result[i*3 + 10] = text.b;
+    }
+    return result;
+}
+
+
+/*
  * sets and reads fan and pump speeds
  */
 struct UsbController<'a> {
@@ -150,7 +189,7 @@ impl<'a> UsbController<'a> {
         if fan_speed > 100 {
             buf[4] = 100;
         }
-        let result = self.handle.write_interrupt(0x01, &mut buf, Duration::from_secs(1)).unwrap();
+        let result = self.handle.write_interrupt(0x01, &buf, Duration::from_secs(1)).unwrap();
     }
 
     fn set_pump(&mut self, pump_speed: u8) {
@@ -158,14 +197,23 @@ impl<'a> UsbController<'a> {
         if pump_speed > 100 {
             buf[4] = 100;
         }
-        let result = self.handle.write_interrupt(0x01, &mut buf, Duration::from_secs(1)).unwrap();
+        let result = self.handle.write_interrupt(0x01, &buf, Duration::from_secs(1)).unwrap();
     }
 
-    fn set_color(&mut self, r: u8, g: u8, b: u8) {
-        let mode_a = 0x06;
-        let mode_b = 0x02;
-        let mut buf: [u8; 32] = [0x02, 0x4c, 0x00, mode_a, mode_b, g, r, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b, r, g, b];
-        let result = self.handle.write_interrupt(0x01, &mut buf, Duration::from_secs(1)).unwrap();
+    fn set_color(&mut self, text: RGB, colors: &[RGB; 8]) {
+        let mode = 0x06;
+        let buf = color_msg(mode, 0, text, &colors);
+        let result = self.handle.write_interrupt(0x01, &buf, Duration::from_secs(1)).unwrap();
+    }
+
+    fn set_color_random(&mut self) {
+        let mode = 0x04;
+        for seq in 0..8 {
+            let text = RGB::rand();
+            let colors = [RGB::rand(); 8];
+            let buf = color_msg(mode, seq, text, &colors);
+            let result = self.handle.write_interrupt(0x01, &buf, Duration::from_secs(1)).unwrap();
+        }
     }
 }
 
@@ -250,6 +298,7 @@ impl<'a> Monitor<'a> {
     fn run(&mut self) {
         for usb_device in self.sensor_usb.iter_mut() {
             usb_device.claim();
+            usb_device.set_color_random();
         }
 
 
@@ -281,7 +330,7 @@ impl<'a> Monitor<'a> {
 
                 println!("Setting fan: {}, pump {}", new_speed, new_speed);
                 for usb_device in self.sensor_usb.iter_mut() {
-                    usb_device.set_color(new_speed, 0, 0);
+                    //usb_device.set_color(new_speed, 0, 0);
                     usb_device.set_fan(new_speed);
                     usb_device.set_pump(new_speed);
                 }
