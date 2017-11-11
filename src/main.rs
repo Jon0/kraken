@@ -5,8 +5,10 @@ use std::str;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::fs;
 use std::fs::File;
 use std::time::Duration;
+use std::path::PathBuf;
 use std::u8;
 use rand::Rng;
 
@@ -360,15 +362,40 @@ fn monitor_device(board_temp: &mut SysfsSensor, cpu_temp: &mut SysfsSensor, usb_
 }
 
 
+fn find_temp_input(name: &str) -> Option<PathBuf> {
+    let mut buf: [u8; 32] = [0; 32];
+    let paths = fs::read_dir("/sys/class/hwmon/").unwrap();
+
+    for mut path in paths {
+        let hwmon_dir = path.unwrap().path();
+        let mut hwmon_path = hwmon_dir.clone();
+        hwmon_path.push("name");
+        let mut file = File::open(hwmon_path.as_path()).unwrap();
+        let result = file.read(&mut buf).unwrap();
+        let hwmon_string = str::from_utf8(&buf[0..result - 1]).unwrap();
+        if hwmon_string == name {
+            return Some(hwmon_dir);
+        }
+    }
+
+    return None;
+}
+
+
 fn select_device(device: libusb::Device) {
 
     // print all device information
     print_device(&device);
 
+    // find temp sensor file
+    let mut monitor_path = find_temp_input("coretemp").unwrap();
+    monitor_path.push("temp1_input");
+    println!("Opening {:?}", monitor_path.display());
+
     // add devices to monitor
     let mut monitor = Monitor::new();
     //monitor.add_file_monitor("Board", "/sys/class/hwmon/hwmon4/temp2_input");
-    monitor.add_file_monitor("CPU", "/sys/class/hwmon/hwmon0/temp1_input");
+    monitor.add_file_monitor("CPU", monitor_path.as_path().to_str().unwrap());
     monitor.add_usb_monitor("Water", &device);
     monitor.run();
 }
